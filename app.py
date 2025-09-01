@@ -44,15 +44,16 @@ except Exception as e:
 
 # --- Initialize AI Model ---
 print("Loading AI model...")
-device = 0 if torch.cuda.is_available() else -1
-print(f"Using device: {'GPU' if device == 0 else 'CPU'}")
+device = -1  # Force CPU usage to save memory
+print("Using device: CPU (optimized for PythonAnywhere)")
 
 try:
+    # Use smaller model that fits PythonAnywhere free tier
     generator = pipeline(
         'text2text-generation',
-        model='google/flan-t5-base',
+        model='google/flan-t5-small',  # Smaller version
         device=device,
-        torch_dtype=torch.float16 if device == 0 else torch.float32
+        torch_dtype=torch.float32
     )
     print("AI model loaded successfully!")
 except Exception as e:
@@ -75,17 +76,13 @@ def get_ai_explanation(topic):
     if generator is None:
         return "Error: AI model is not available. Please check the server logs."
 
-    prompt = f"""
-    Explain the real-world importance of {topic} in one engaging paragraph.
-    Connect it to three different modern careers, hobbies, or global challenges.
-    Write in a motivational tone for high school students.
-    """
+    prompt = f"Explain the real-world importance of {topic} in one engaging paragraph. Connect it to different modern careers, hobbies, or global challenges. Write in a motivational tone for high school students."
 
     try:
         print(f"Generating AI explanation for topic: {topic}")
         result = generator(
             prompt,
-            max_length=300,
+            max_length=200,  # Reduced length to save memory
             do_sample=True,
             temperature=0.7,
             num_return_sequences=1
