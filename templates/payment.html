@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment - EduContext</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        button { background: #007bff; color: white; padding: 12px; border: none; border-radius: 5px; cursor: pointer; width: 100%; }
+        button:hover { background: #0056b3; }
+        .error { color: red; margin-top: 10px; }
+        .success { color: green; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>💳 Complete Your Payment</h2>
+    <p>Please enter your details to complete the payment of <strong>{{ price }} KES</strong></p>
+    
+    <form id="payment-form">
+        <div class="form-group">
+            <label for="email">Email Address:</label>
+            <input type="email" id="email" placeholder="your@email.com" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="phone">M-Pesa Phone Number:</label>
+            <input type="tel" id="phone" placeholder="254712345678" required>
+            <small>Enter your M-Pesa registered phone number (format: 2547XXXXXX)</small>
+        </div>
+        
+        <button type="submit">Pay with M-Pesa</button>
+    </form>
+    
+    <div id="payment-status"></div>
+    
+    <script>
+    document.getElementById('payment-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('email').value;
+        const phone = document.getElementById('phone').value;
+        const statusDiv = document.getElementById('payment-status');
+        
+        statusDiv.innerHTML = '<div class="success">🔄 Initiating M-Pesa payment...</div>';
+        
+        try {
+            const response = await fetch('/initiate-payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, phone })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                statusDiv.innerHTML = `
+                    <div class="success">
+                        ✅ ${result.message}<br>
+                        <strong>Check your phone</strong> to complete the M-Pesa payment.
+                    </div>
+                `;
+                
+                // Poll for payment status
+                checkPaymentStatus(result.invoice_id);
+            } else {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error}</div>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<div class="error">❌ Network error: ${error.message}</div>`;
+        }
+    });
+    
+    async function checkPaymentStatus(invoiceId) {
+        try {
+            const response = await fetch('/check-payment-status/' + invoiceId);
+            const status = await response.json();
+            
+            if (status.state === 'COMPLETE') {
+                window.location.href = '/success?transaction_id=' + invoiceId + '&amount=' + status.amount;
+            } else if (status.state === 'PENDING') {
+                // Check again after 3 seconds
+                setTimeout(() => checkPaymentStatus(invoiceId), 3000);
+            }
+        } catch (error) {
+            console.log('Status check error:', error);
+        }
+    }
+    </script>
+</body>
+</html>

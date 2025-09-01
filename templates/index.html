@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduContext - Find the Relevance</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f0f8ff;
+            color: #333;
+        }
+        h1 {
+            color: #2c5aa0;
+            text-align: center;
+        }
+        #input-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        input, button {
+            padding: 0.8rem;
+            margin: 0.5rem 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        button:hover {
+            background-color: #367c39;
+        }
+        #result {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: none;
+        }
+    </style>
+</head>
+<!-- Payment Section -->
+<div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+    <h3>🔓 Upgrade to Premium</h3>
+    <p>Get unlimited access to all features for just {{ price }} KES</p>
+    <a href="/payment-page" style="background: #28a745; color: white; padding: 10px 20px; 
+       text-decoration: none; border-radius: 5px; display: inline-block;">
+       💳 Upgrade Now
+    </a>
+</div>
+<body>
+    <h1>EduContext 🔬</h1>
+    <p><i>Discover why what you're learning actually matters.</i></p>
+
+    <div id="input-section">
+        <h2>What topic are you learning?</h2>
+        <input type="text" id="topicInput" placeholder="e.g., Pythagorean Theorem, Photosynthesis...">
+        <button onclick="getRelevance()">Reveal the Relevance!</button>
+    </div>
+
+    <div id="result">
+        <h2>Why <span id="topicResult"></span> matters:</h2>
+
+        <p id="relevanceText"></p>
+    </div>
+
+    <script>
+        function getRelevance() {
+            const topic = document.getElementById("topicInput").value.trim();
+            if (!topic) {
+                alert("Please enter a topic first!");
+                return;
+            }
+
+            const resultDiv = document.getElementById("result");
+            resultDiv.style.display = "block";
+            document.getElementById("topicResult").textContent = topic;
+            document.getElementById("relevanceText").textContent = "Asking the AI... please wait.";
+
+            fetch("/get_relevance", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ topic: topic })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("relevanceText").innerHTML = data.relevance;
+            })
+            .catch((error) => {
+                console.error("Error:", error);
+                document.getElementById("relevanceText").textContent = "Sorry, something went wrong!";
+            });
+        }
+    </script>
+</body>
+
