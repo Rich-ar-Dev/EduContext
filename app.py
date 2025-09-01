@@ -21,17 +21,26 @@ db_config = {
     'password': os.getenv('DB_PASSWORD')
 }
 
-# IntaSend Configuration - LIVE KEYS
+# IntaSend Configuration - With error handling
 INTASEND_PUBLISHABLE_KEY = os.getenv('INTASEND_PUBLISHABLE_KEY')
 INTASEND_SECRET_KEY = os.getenv('INTASEND_SECRET_KEY')
 PRICE_PREMIUM_ACCESS = int(os.getenv('PRICE_PREMIUM_ACCESS', 20))
 
-# Initialize IntaSend service - LIVE MODE
-intasend_service = APIService(
-    token=INTASEND_SECRET_KEY,
-    publishable_key=INTASEND_PUBLISHABLE_KEY,
-    test=False  # LIVE ENVIRONMENT
-)
+# Initialize IntaSend service with error handling
+intasend_service = None
+try:
+    if INTASEND_PUBLISHABLE_KEY and INTASEND_SECRET_KEY:
+        intasend_service = APIService(
+            token=INTASEND_SECRET_KEY,
+            publishable_key=INTASEND_PUBLISHABLE_KEY,
+            test=False  # LIVE ENVIRONMENT
+        )
+        print("IntaSend service initialized successfully!")
+    else:
+        print("Warning: IntaSend API keys not found. Payment features will be disabled.")
+except Exception as e:
+    print(f"Error initializing IntaSend service: {e}")
+    intasend_service = None
 
 # --- Initialize AI Model ---
 print("Loading AI model...")
@@ -83,7 +92,7 @@ def get_ai_explanation(topic):
         )
         
         ai_response = result[0]['generated_text'].strip()
-        print(f"AI response generated: {ai_response}")
+        print(f"AI response generated: {ai_response})
         return ai_response
 
     except Exception as e:
@@ -159,6 +168,12 @@ def get_relevance():
 @app.route('/initiate-payment', methods=['POST'])
 def initiate_payment():
     try:
+        if intasend_service is None:
+            return jsonify({
+                'success': False,
+                'error': 'Payment service is currently unavailable. Please try again later.'
+            }), 503
+            
         data = request.json
         email = data.get('email')
         phone = data.get('phone')
@@ -197,6 +212,9 @@ def initiate_payment():
 @app.route('/check-payment-status/<invoice_id>')
 def check_payment_status(invoice_id):
     try:
+        if intasend_service is None:
+            return jsonify({'error': 'Payment service unavailable'}), 503
+            
         status = intasend_service.collect.status(invoice_id=invoice_id)
         
         # Check if payment is completed
@@ -229,6 +247,18 @@ def cancel():
 def payment_page():
     """Page where user enters payment details"""
     return render_template('payment.html', price=PRICE_PREMIUM_ACCESS)
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for deployment monitoring"""
+    return jsonify({
+        'status': 'healthy',
+        'services': {
+            'ai_model_loaded': generator is not None,
+            'intasend_configured': intasend_service is not None,
+            'database_configured': all(db_config.values())
+        }
+    })
 
 @app.route('/webhook', methods=['POST'])
 def intasend_webhook():
