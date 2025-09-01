@@ -92,7 +92,7 @@ def get_ai_explanation(topic):
         )
         
         ai_response = result[0]['generated_text'].strip()
-        print(f"AI response generated: {ai_response})
+        print(f"AI response generated: {ai_response}")
         return ai_response
 
     except Exception as e:
