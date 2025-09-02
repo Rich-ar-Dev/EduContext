@@ -1,10 +1,11 @@
 # app.py
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 from mysql.connector import Error
 import mysql.connector
 import os
 from dotenv import load_dotenv
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from intasend import APIService
 
 # Load environment variables
 load_dotenv()
@@ -13,15 +14,13 @@ app = Flask(__name__)
 
 # --- Configuration ---
 db_config = {
-    'host': os.getenv('DB_HOST', '127.0.0.1'),  # ✅ force TCP, not named pipe
+    'host': os.getenv('DB_HOST', '127.0.0.1'),
     'database': os.getenv('DB_NAME'),
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASSWORD')
 }
 
 # IntaSend Configuration
-from intasend import APIService
-
 INTASEND_PUBLISHABLE_KEY = os.getenv('INTASEND_PUBLISHABLE_KEY')
 INTASEND_SECRET_KEY = os.getenv('INTASEND_SECRET_KEY')
 PRICE_PREMIUM_ACCESS = int(os.getenv('PRICE_PREMIUM_ACCESS', 20))
@@ -32,7 +31,7 @@ try:
         intasend_service = APIService(
             token=INTASEND_SECRET_KEY,
             publishable_key=INTASEND_PUBLISHABLE_KEY,
-            test=False  # ✅ LIVE ENV
+            test=False
         )
         print("✅ IntaSend initialized successfully (LIVE).")
     else:
@@ -49,7 +48,7 @@ def get_ai_model():
     if generator is None:
         try:
             print("⏳ Loading AI model (flan-t5-small, Transformers)...")
-            model_id = "google/flan-t5-small"  # ✅ public & available
+            model_id = "google/flan-t5-small"
             tokenizer = AutoTokenizer.from_pretrained(model_id)
             model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
             generator = pipeline(
@@ -157,6 +156,54 @@ def test_db():
 @app.route('/test_ai')
 def test_ai():
     return get_ai_explanation("mathematics")
+
+# --- Payment Endpoints ---
+@app.route('/initiate-payment', methods=['POST'])
+def initiate_payment():
+    if not intasend_service:
+        return jsonify({'success': False, 'error': 'Payment service not configured'}), 500
+
+    data = request.get_json()
+    email = data.get('email')
+    phone = data.get('phone')
+
+    if not email or not phone:
+        return jsonify({'success': False, 'error': 'Email and phone are required'}), 400
+
+    try:
+        invoice = intasend_service.invoice.create({
+            "amount": PRICE_PREMIUM_ACCESS,
+            "currency": "KES",
+            "description": "Premium Access for EduContext",
+            "customer": {"email": email, "phone": phone},
+            "callback_url": ""  # optional webhook
+        })
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice['id'],
+            'message': 'Payment initiated. Please check your phone to complete the transaction.'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/check-payment-status/<invoice_id>')
+def check_payment_status(invoice_id):
+    if not intasend_service:
+        return jsonify({'state': 'ERROR', 'error': 'Payment service not configured'}), 500
+    try:
+        invoice = intasend_service.invoice.retrieve(invoice_id)
+        return jsonify({
+            'state': invoice['status'],  # PENDING, COMPLETE, FAILED
+            'amount': invoice.get('amount')
+        })
+    except Exception as e:
+        return jsonify({'state': 'ERROR', 'error': str(e)}), 500
+
+@app.route('/success')
+def payment_success():
+    transaction_id = request.args.get('transaction_id')
+    amount = request.args.get('amount')
+    return f"✅ Payment successful! Transaction ID: {transaction_id}, Amount: {amount} KES"
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
