@@ -47,18 +47,33 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             display: none;
         }
+        .payment-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .payment-section a {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .payment-section a:hover {
+            background: #218838;
+        }
     </style>
 </head>
-<!-- Payment Section -->
-<div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-    <h3>🔓 Upgrade to Premium</h3>
-    <p>Get unlimited access to all features for just {{ price }} KES</p>
-    <a href="/payment-page" style="background: #28a745; color: white; padding: 10px 20px; 
-       text-decoration: none; border-radius: 5px; display: inline-block;">
-       💳 Upgrade Now
-    </a>
-</div>
 <body>
+    <!-- Payment Section -->
+    <div class="payment-section">
+        <h3>🔓 Upgrade to Premium</h3>
+        <p>Get unlimited access to all features for just {{ price }} KES</p>
+        <a href="/payment-page">💳 Upgrade Now</a>
+    </div>
+
     <h1>EduContext 🔬</h1>
     <p><i>Discover why what you're learning actually matters.</i></p>
 
@@ -70,7 +85,6 @@
 
     <div id="result">
         <h2>Why <span id="topicResult"></span> matters:</h2>
-
         <p id="relevanceText"></p>
     </div>
 
@@ -105,4 +119,4 @@
         }
     </script>
 </body>
-
+</html>
