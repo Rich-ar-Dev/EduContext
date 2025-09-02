@@ -1,12 +1,15 @@
 # app.py
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template
 from mysql.connector import Error
 import mysql.connector
 import os
 from dotenv import load_dotenv
 from transformers import pipeline
-import torch
-from intasend import APIService
+
+# --- Lightweight AI backend ---
+# Install: pip install optimum onnxruntime
+from optimum.onnxruntime import ORTModelForSeq2SeqLM
+from transformers import AutoTokenizer
 
 # Load environment variables
 load_dotenv()
@@ -21,233 +24,118 @@ db_config = {
     'password': os.getenv('DB_PASSWORD')
 }
 
-# IntaSend Configuration - With error handling
+# IntaSend Configuration
+from intasend import APIService
+
 INTASEND_PUBLISHABLE_KEY = os.getenv('INTASEND_PUBLISHABLE_KEY')
 INTASEND_SECRET_KEY = os.getenv('INTASEND_SECRET_KEY')
 PRICE_PREMIUM_ACCESS = int(os.getenv('PRICE_PREMIUM_ACCESS', 20))
 
-# Initialize IntaSend service with error handling
 intasend_service = None
 try:
     if INTASEND_PUBLISHABLE_KEY and INTASEND_SECRET_KEY:
         intasend_service = APIService(
             token=INTASEND_SECRET_KEY,
             publishable_key=INTASEND_PUBLISHABLE_KEY,
-            test=False  # LIVE ENVIRONMENT
+            test=False  # LIVE ENV
         )
-        print("IntaSend service initialized successfully!")
+        print("IntaSend initialized successfully.")
     else:
-        print("Warning: IntaSend API keys not found. Payment features will be disabled.")
+        print("Warning: Missing IntaSend keys.")
 except Exception as e:
-    print(f"Error initializing IntaSend service: {e}")
+    print(f"IntaSend error: {e}")
     intasend_service = None
 
-# --- Initialize AI Model ---
-print("Loading AI model...")
-device = -1  # Force CPU usage to save memory
-print("Using device: CPU (optimized for PythonAnywhere)")
+# --- AI Model (Lazy Load) ---
+generator = None
 
-try:
-    # Use smaller model that fits PythonAnywhere free tier
-    generator = pipeline(
-        'text2text-generation',
-        model='google/flan-t5-small',  # Smaller version
-        device=device,
-        torch_dtype=torch.float32
-    )
-    print("AI model loaded successfully!")
-except Exception as e:
-    print(f"Error loading AI model: {e}")
-    generator = None
+def get_ai_model():
+    global generator
+    if generator is None:
+        print("Loading AI model (flan-t5-nano, ONNX)...")
+        model_id = "google/flan-t5-nano"
+        model = ORTModelForSeq2SeqLM.from_pretrained(model_id, from_transformers=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generator = pipeline(
+            "text2text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            framework="onnxruntime"
+        )
+        print("AI model loaded successfully.")
+    return generator
 
-# --- Database Connection Function ---
+# --- Database Connection ---
 def get_db_connection():
     try:
         connection = mysql.connector.connect(**db_config)
         if connection.is_connected():
-            print("Successfully connected to the database")
             return connection
     except Error as e:
-        print(f"Error connecting to MySQL: {e}")
+        print(f"DB connection error: {e}")
     return None
 
-# --- AI Explanation Function ---
+# --- AI Explanation ---
 def get_ai_explanation(topic):
-    if generator is None:
-        return "Error: AI model is not available. Please check the server logs."
-
-    prompt = f"Explain the real-world importance of {topic} in one engaging paragraph. Connect it to different modern careers, hobbies, or global challenges. Write in a motivational tone for high school students."
-
     try:
-        print(f"Generating AI explanation for topic: {topic}")
-        result = generator(
+        gen = get_ai_model()
+        prompt = (
+            f"Explain the real-world importance of {topic} in one engaging paragraph. "
+            f"Connect it to modern careers, hobbies, or global challenges. "
+            f"Write in a motivational tone for high school students."
+        )
+        result = gen(
             prompt,
-            max_length=200,  # Reduced length to save memory
+            max_length=100,  # reduced for memory
             do_sample=True,
             temperature=0.7,
             num_return_sequences=1
         )
-        
-        ai_response = result[0]['generated_text'].strip()
-        print(f"AI response generated: {ai_response}")
-        return ai_response
-
+        return result[0]['generated_text'].strip()
     except Exception as e:
-        print(f"Error generating AI response: {e}")
+        print(f"AI error: {e}")
         return "Sorry, I encountered an error while generating the explanation."
 
-# --- Database Functions ---
+# --- Save to DB ---
 def save_to_database(topic, ai_response):
-    connection = get_db_connection()
-    if connection is None:
-        print("ERROR: Could not connect to database. Save failed.")
+    conn = get_db_connection()
+    if conn is None:
         return
-
     try:
-        cursor = connection.cursor()
-        sql_query = "INSERT INTO relevance_queries (topic, ai_response) VALUES (%s, %s)"
-        cursor.execute(sql_query, (topic, ai_response))
-        connection.commit()
-        print(f"SUCCESS: Saved topic '{topic}' to the database.")
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO relevance_queries (topic, ai_response) VALUES (%s, %s)",
+            (topic, ai_response)
+        )
+        conn.commit()
     except Error as e:
-        print(f"DATABASE ERROR: {e}")
-        connection.rollback()
+        print(f"DB error: {e}")
+        conn.rollback()
     finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def create_user_payment(user_email, transaction_id, amount, currency='KES'):
-    """Save payment information to database"""
-    connection = get_db_connection()
-    if connection is None:
-        return False
-
-    try:
-        cursor = connection.cursor()
-        sql_query = """
-            INSERT INTO payments (user_email, transaction_id, amount, currency, status)
-            VALUES (%s, %s, %s, %s, 'completed')
-        """
-        cursor.execute(sql_query, (user_email, transaction_id, amount, currency))
-        connection.commit()
-        return True
-    except Error as e:
-        print(f"Payment save error: {e}")
-        connection.rollback()
-        return False
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+        cur.close()
+        conn.close()
 
 # --- Routes ---
 @app.route('/')
 def index():
-    return render_template('index.html', 
-                         intasend_publishable_key=INTASEND_PUBLISHABLE_KEY,
-                         price=PRICE_PREMIUM_ACCESS)
+    return render_template(
+        'index.html',
+        intasend_publishable_key=INTASEND_PUBLISHABLE_KEY,
+        price=PRICE_PREMIUM_ACCESS
+    )
 
 @app.route('/get_relevance', methods=['POST'])
 def get_relevance():
     data = request.get_json()
     topic = data.get('topic')
-
     if not topic:
         return jsonify({'error': 'No topic provided'}), 400
-
-    print(f"Received topic: {topic}")
     ai_response = get_ai_explanation(topic)
     save_to_database(topic, ai_response)
-
     return jsonify({'topic': topic, 'relevance': ai_response})
-
-@app.route('/initiate-payment', methods=['POST'])
-def initiate_payment():
-    try:
-        if intasend_service is None:
-            return jsonify({
-                'success': False,
-                'error': 'Payment service is currently unavailable. Please try again later.'
-            }), 503
-            
-        data = request.json
-        email = data.get('email')
-        phone = data.get('phone')
-        
-        if not email or not phone:
-            return jsonify({
-                'success': False,
-                'error': 'Email and phone number are required'
-            }), 400
-        
-        # Format phone number (ensure it starts with 254)
-        if phone.startswith('0'):
-            phone = '254' + phone[1:]
-        elif not phone.startswith('254'):
-            phone = '254' + phone
-        
-        # Initiate M-Pesa STK push - LIVE TRANSACTION
-        response = intasend_service.collect.mpesa_stk_push(
-            email=email,
-            phone_number=phone,
-            amount=PRICE_PREMIUM_ACCESS,
-            currency='KES',
-            narrative='Premium Educational Access'
-        )
-        
-        return jsonify({
-            'success': True,
-            'invoice_id': response['invoice']['invoice_id'],
-            'message': 'M-Pesa payment initiated. Check your phone to complete the payment.'
-        })
-        
-    except Exception as e:
-        print(f"Payment initiation error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 400
-
-@app.route('/check-payment-status/<invoice_id>')
-def check_payment_status(invoice_id):
-    try:
-        if intasend_service is None:
-            return jsonify({'error': 'Payment service unavailable'}), 503
-            
-        status = intasend_service.collect.status(invoice_id=invoice_id)
-        
-        # Check if payment is completed
-        if status.get('state') == 'COMPLETE':
-            # Save to database
-            create_user_payment(
-                status.get('email', ''),
-                invoice_id,
-                status.get('amount', 0),
-                'KES'
-            )
-            
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/success')
-def success():
-    transaction_id = request.args.get('transaction_id', '')
-    amount = request.args.get('amount', '')
-    return render_template('success.html', 
-                         transaction_id=transaction_id,
-                         amount=amount)
-
-@app.route('/cancel')
-def cancel():
-    return render_template('cancel.html')
-
-@app.route('/payment-page')
-def payment_page():
-    """Page where user enters payment details"""
-    return render_template('payment.html', price=PRICE_PREMIUM_ACCESS)
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for deployment monitoring"""
     return jsonify({
         'status': 'healthy',
         'services': {
@@ -257,44 +145,18 @@ def health_check():
         }
     })
 
-@app.route('/webhook', methods=['POST'])
-def intasend_webhook():
-    """Handle IntaSend payment webhooks"""
-    try:
-        data = request.json
-        
-        if data.get('event') == 'payment.completed':
-            transaction_id = data.get('transaction_id')
-            amount = data.get('amount')
-            email = data.get('customer', {}).get('email', '')
-            
-            # Save successful payment to database
-            create_user_payment(email, transaction_id, amount, 'KES')
-            
-            print(f"Payment completed via webhook: {transaction_id} for {amount}")
-            
-        return jsonify({'status': 'webhook received'})
-        
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return jsonify({'error': str(e)}), 400
-
+# --- Test Endpoints ---
 @app.route('/test_db')
 def test_db():
-    connection = get_db_connection()
-    if connection:
-        connection.close()
+    conn = get_db_connection()
+    if conn:
+        conn.close()
         return "Database connection successful!"
-    else:
-        return "Database connection failed!"
+    return "Database connection failed!"
 
 @app.route('/test_ai')
 def test_ai():
-    if generator is None:
-        return "AI model is not loaded. Check server logs."
-    
-    test_response = get_ai_explanation("mathematics")
-    return f"AI test response: {test_response}"
+    return get_ai_explanation("mathematics")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
