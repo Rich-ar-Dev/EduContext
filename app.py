@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, request, jsonify, render_template, redirect
+from flask import Flask, request, jsonify, render_template
 from mysql.connector import Error
 import mysql.connector
 import os
@@ -31,7 +31,7 @@ try:
         intasend_service = APIService(
             token=INTASEND_SECRET_KEY,
             publishable_key=INTASEND_PUBLISHABLE_KEY,
-            test=False
+            test=False  # LIVE
         )
         print("✅ IntaSend initialized successfully (LIVE).")
     else:
@@ -117,11 +117,11 @@ def save_to_database(topic, ai_response):
 # --- Routes ---
 @app.route('/')
 def index():
-    return render_template(
-        'index.html',
-        intasend_publishable_key=INTASEND_PUBLISHABLE_KEY,
-        price=PRICE_PREMIUM_ACCESS
-    )
+    return render_template('index.html', price=PRICE_PREMIUM_ACCESS)
+
+@app.route('/payment-page')
+def payment_page():
+    return render_template('payment.html', price=PRICE_PREMIUM_ACCESS)
 
 @app.route('/get_relevance', methods=['POST'])
 def get_relevance():
@@ -144,7 +144,6 @@ def health_check():
         }
     })
 
-# --- Test Endpoints ---
 @app.route('/test_db')
 def test_db():
     conn = get_db_connection()

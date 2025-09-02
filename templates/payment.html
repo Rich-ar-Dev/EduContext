@@ -47,9 +47,7 @@
         try {
             const response = await fetch('/initiate-payment', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, phone })
             });
             
@@ -79,10 +77,13 @@
             const status = await response.json();
             
             if (status.state === 'COMPLETE') {
-                window.location.href = '/success?transaction_id=' + invoiceId + '&amount=' + status.amount;
+                // Redirect to success page
+                window.location.href = `/success?transaction_id=${invoiceId}&amount=${status.amount}`;
             } else if (status.state === 'PENDING') {
-                // Check again after 3 seconds
+                // Poll again after 3 seconds
                 setTimeout(() => checkPaymentStatus(invoiceId), 3000);
+            } else if (status.state === 'FAILED') {
+                document.getElementById('payment-status').innerHTML = '<div class="error">❌ Payment failed. Please try again.</div>';
             }
         } catch (error) {
             console.log('Status check error:', error);
